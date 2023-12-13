@@ -1,7 +1,8 @@
-import re
 from io import StringIO
-from utils import PageSelector
+
 import pandas as pd
+
+from utils import PageSelector
 
 
 def ga4_params_comparison(url_dict, max_retries=6):
@@ -13,14 +14,7 @@ def ga4_params_comparison(url_dict, max_retries=6):
         params_dict = None
 
         while retry_count < max_retries:
-            if re.search(r'.*honda.*', url, re.IGNORECASE):
-                params_dict = PageSelector.selenium_honda_script(url)
-            elif re.search(r'.*formula1.*', url, re.IGNORECASE):
-                params_dict = PageSelector.selenium_formula_script(url)
-            elif re.search(r'.*eephonesmart.*', url, re.IGNORECASE):
-                params_dict = PageSelector.selenium_ee_script(url)
-            else:
-                return None
+            params_dict = PageSelector.selenium_honda_script(url)
 
             if params_dict:
                 break
@@ -32,6 +26,9 @@ def ga4_params_comparison(url_dict, max_retries=6):
             print(f"Failed to obtain params_dict for {url}. Skipping this URL.")
             continue
 
+        best_match_dict = None
+        best_match_count = 0
+
         result_data = {'URL': '', 'Params': {}, 'Expected': {}, 'Actual': {}, 'Test Result': {}}
         result_data['URL'] = url
         result_data['Params'] = {}
@@ -39,28 +36,35 @@ def ga4_params_comparison(url_dict, max_retries=6):
         result_data['Actual'] = {}
         result_data['Test Result'] = {}
 
+        for idx, params_inner_dict in params_dict.items():
+            match_count = sum(1 for key, expected_value in inner_dict.items() if
+                              key in params_inner_dict and expected_value.lower() == params_inner_dict[key].lower())
+
+            if match_count > best_match_count:
+                best_match_dict = params_inner_dict
+                best_match_count = match_count
+
         for key, expected_value in inner_dict.items():
-            for params_inner_dict in params_dict.values():
-                if key in params_inner_dict:
-                    actual_value = params_inner_dict[key]
+            if key in best_match_dict:
+                actual_value = best_match_dict[key]
 
-                    if expected_value == '' and actual_value != '':
-                        result_data['Test Result'][key] = 'Fail'
-                    elif expected_value == '' and actual_value == '':
-                        result_data['Test Result'][key] = 'Parameter not found in input and website'
-                    elif expected_value.lower() == actual_value.lower():
-                        result_data['Test Result'][key] = 'Pass'
-                    else:
-                        result_data['Test Result'][key] = 'Fail'
+                if expected_value == '' and actual_value != '':
+                    result_data['Test Result'][key] = 'Fail'
+                elif expected_value == '' and actual_value == '':
+                    result_data['Test Result'][key] = 'Parameter not found in input and website'
+                elif expected_value.lower() == actual_value.lower():
+                    result_data['Test Result'][key] = 'Pass'
                 else:
-                    actual_value = ''
+                    result_data['Test Result'][key] = 'Fail'
+            else:
+                actual_value = ''
 
-                    if expected_value == '':
-                        result_data['Test Result'][key] = "Fail"
-                    else:
-                        result_data['Test Result'][key] = 'Parameter not found'
+                if expected_value == '':
+                    result_data['Test Result'][key] = "Fail"
+                else:
+                    result_data['Test Result'][key] = 'Parameter not found'
 
-                result_data['Actual'][key] = actual_value
+            result_data['Actual'][key] = actual_value
 
         result_data['Params'] = {key: key for key in result_data['Expected'].keys()}
         result_data_list.append(result_data)
