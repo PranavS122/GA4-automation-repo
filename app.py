@@ -56,7 +56,7 @@ def main():
             download_href = download_link(result_df, filename="Test_results.xlsx", text="Download Test Results")
             st.markdown(download_href, unsafe_allow_html=True)
 
-    st.title("Honda KPIs")
+    st.header("Honda KPIs")
 
     upload_click = st.file_uploader("Choose a file for Honda KPIs", type=["csv", "xlsx"])
 
