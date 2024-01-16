@@ -1,84 +1,165 @@
+import re
 import pandas as pd
 from io import StringIO
-from utils_click import PageClick
+from utils_click import PageClick_GA as ga_click
+from utils_click import PageClick_Adobe as adobe_click
 
-def preprocess_click(df):
-    try:
-        df = df.fillna("")
-        url_dict = df.set_index('URL').to_dict(orient='index')
-        user_xpath = url_dict[next(iter(url_dict))].pop('Xpath', None)
+def clean_key(key):
+    return ''.join(c for c in key if c.isalnum())
 
-        return url_dict, user_xpath
-    except Exception as e:
-        print(f"Error: {e}")
-        return None, None
+class GA4_params_tester_click():
+
+    @staticmethod
+    def ga4_params_click(combined_list):
+        result_data_list = []
+
+        for entry in combined_list:
+            url_dict = {}
+            
+            for url_key, url_value in entry.items():
+                url_dict[url_key] = {k: v for k, v in url_value.items() if k != 'xpath_list'}
+                xpath_list = url_value.get('xpath_list')
+
+                if re.search(r'formula', url_key, re.IGNORECASE):
+                    script_function = ga_click.selenium_formula_script
+                elif re.search(r'eephone', url_key, re.IGNORECASE):
+                    script_function = ga_click.selenium_ee_script
+                elif re.search(r'honda', url_key, re.IGNORECASE):
+                    script_function = ga_click.selenium_honda_script
+                else:
+                    print(f"No specific script found for {url_key}. Skipping this URL.")
+                    continue
+
+                params_list = script_function(url_key, xpath_list)
+
+                for url_key, inner_dict in url_dict.items():
+                    inner_dict_values_lower = {k: v.lower() for k, v in inner_dict.items()}
+
+                    best_match_dict = None
+                    best_match_count = 0
+
+                    for params_dict in params_list:
+                        params_dict_values_lower = {k: v.lower() for k, v in params_dict.items()}
+
+                        match_count = sum(value == params_dict_values_lower.get(key) for key, value in inner_dict_values_lower.items())
+                        
+                        if match_count > best_match_count:
+                            best_match_dict = params_dict.copy() 
+                            best_match_count = match_count
+
+                    print(f"For URL: {url_key}")
+                    print("Best Match:")
+                    print(best_match_dict)
+
+                    result_data = {
+                        'URL': url_key,
+                        'Params': {key: key for key in inner_dict_values_lower.keys()},
+                        'Expected': inner_dict,
+                        'Actual': {},
+                        'Test Result': {}
+                    }
+
+                    for key, expected_value in inner_dict_values_lower.items():
+                        key_lower = clean_key(key.lower())
+
+                        if any(clean_key(k.lower()) == key_lower for k in best_match_dict):
+
+                            actual_value = next((v for k, v in best_match_dict.items() if clean_key(k.lower()) == key_lower), None)
+
+                            if expected_value == '' and actual_value != '':
+                                result_data['Test Result'][key] = 'Fail'
+                            elif expected_value == '' and actual_value == '':
+                                result_data['Test Result'][key] = 'Parameter not found in input and website'
+                            elif expected_value.lower() == actual_value.lower():
+                                result_data['Test Result'][key] = 'Pass'
+                            else:
+                                result_data['Test Result'][key] = 'Fail'
+                        else:
+                            actual_value = ''
+
+                            if expected_value == '':
+                                result_data['Test Result'][key] = 'Fail'
+                            else:
+                                result_data['Test Result'][key] = 'Parameter not found'
+
+                        result_data['Actual'][key] = actual_value
+
+                    result_data_list.append(result_data)
+
+        return result_data_list
     
+class Adobe_params_test_click():
 
-def ga4_params_click(url_dict, user_xpath, max_retries=6):
-    result_data_list = []
+    def adobe_params_click(combined_list):
+        result_data_list = []
 
-    for url, inner_dict in url_dict.items():
+        for entry in combined_list:
+            url_dict = {}
+            
+            for url_key, url_value in entry.items():
+                url_dict[url_key] = {k: v for k, v in url_value.items() if k != 'xpath_list'}
+                xpath_list = url_value.get('xpath_list')
 
-        retry_count = 0
-        params_dict = None
+                params_list = adobe_click.selenium_goodyear_script(url_key, xpath_list)
 
-        while retry_count < max_retries:
-            params_dict = PageClick.selenium_honda_script(url, user_xpath)
+                for url_key, inner_dict in url_dict.items():
+                    inner_dict_values_lower = {k: v.lower() for k, v in inner_dict.items()}
 
-            if params_dict:
-                break
-            else:
-                retry_count += 1
-                print(f"Retrying {url} - Attempt {retry_count}")
+                    best_match_dict = None
+                    best_match_count = 0
 
-        if not params_dict:
-            print(f"Failed to obtain params_dict for {url}. Skipping this URL.")
-            continue
+                    for params_dict in params_list:
+                        params_dict_values_lower = {k: v.lower() if isinstance(v, str) else v for k, v in params_dict.items()}
 
-        best_match_dict = None
-        best_match_count = 0
+                        match_count = sum(value == params_dict_values_lower.get(key) for key, value in inner_dict_values_lower.items())
+                        
+                        if match_count > best_match_count:
+                            best_match_dict = params_dict.copy() 
+                            best_match_count = match_count
 
-        result_data = {'URL': '', 'Params': {}, 'Expected': {}, 'Actual': {}, 'Test Result': {}}
-        result_data['URL'] = url
-        result_data['Params'] = {}
-        result_data['Expected'] = inner_dict
-        result_data['Actual'] = {}
-        result_data['Test Result'] = {}
+                    print(f"For URL: {url_key}")
+                    print("Best Match:")
+                    print(best_match_dict)
 
-        for idx, params_inner_dict in params_dict.items():
-            match_count = sum(1 for key, expected_value in inner_dict.items() if
-                              key in params_inner_dict and expected_value.lower() == params_inner_dict[key].lower())
+                    result_data = {
+                        'URL': url_key,
+                        'Params': {key: key for key in inner_dict_values_lower.keys()},
+                        'Expected': inner_dict,
+                        'Actual': {},
+                        'Test Result': {}
+                    }
 
-            if match_count > best_match_count:
-                best_match_dict = params_inner_dict
-                best_match_count = match_count
+                    for key, expected_value in inner_dict_values_lower.items():
+                        key_lower = clean_key(key.lower())
 
-        for key, expected_value in inner_dict.items():
-            if key in best_match_dict:
-                actual_value = best_match_dict[key]
+                        if any(clean_key(k.lower()) == key_lower for k in best_match_dict):
 
-                if expected_value == '' and actual_value != '':
-                    result_data['Test Result'][key] = 'Fail'
-                elif expected_value == '' and actual_value == '':
-                    result_data['Test Result'][key] = 'Parameter not found in input and website'
-                elif expected_value.lower() == actual_value.lower():
-                    result_data['Test Result'][key] = 'Pass'
-                else:
-                    result_data['Test Result'][key] = 'Fail'
-            else:
-                actual_value = ''
+                            actual_value = next((v for k, v in best_match_dict.items() if clean_key(k.lower()) == key_lower), None)
 
-                if expected_value == '':
-                    result_data['Test Result'][key] = "Fail"
-                else:
-                    result_data['Test Result'][key] = 'Parameter not found'
+                            expected_value = str(expected_value)
+                            actual_value = str(actual_value)
 
-            result_data['Actual'][key] = actual_value
+                            if expected_value == '' and actual_value != '':
+                                result_data['Test Result'][key] = 'Fail'
+                            elif expected_value == '' and actual_value == '':
+                                result_data['Test Result'][key] = 'Parameter not found in input and website'
+                            elif expected_value.lower() == actual_value.lower():
+                                result_data['Test Result'][key] = 'Pass'
+                            else:
+                                result_data['Test Result'][key] = 'Fail'
+                        else:
+                            actual_value = ''
 
-        result_data['Params'] = {key: key for key in result_data['Expected'].keys()}
-        result_data_list.append(result_data)
+                            if expected_value == '':
+                                result_data['Test Result'][key] = 'Fail'
+                            else:
+                                result_data['Test Result'][key] = 'Parameter not found'
 
-    return result_data_list
+                        result_data['Actual'][key] = actual_value
+
+                    result_data_list.append(result_data)
+
+        return result_data_list
 
 
 def text_conv(result_data_list):
